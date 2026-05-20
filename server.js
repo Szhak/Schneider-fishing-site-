@@ -111,19 +111,21 @@ const server = http.createServer((req, res) => {
   }
 
   if (pathname === '/visit' && req.method === 'POST') {
-    const counter = getCounter();
-    counter.total += 1;
-    saveCounter(counter);
-
     const knownIPs = getKnownIPs();
+    const counter = getCounter();
+    let isNew = false;
+
     if (!knownIPs.has(ip)) {
       knownIPs.add(ip);
       saveKnownIPs(knownIPs);
+      counter.total = (counter.total || 0) + 1;
+      saveCounter(counter);
       logVisit(ip, counter.total);
+      isNew = true;
     }
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ total: counter.total, ip }));
+    res.end(JSON.stringify({ total: counter.total, ip, isNew }));
     return;
   }
 
@@ -230,7 +232,6 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       total_visits:          counter.total,
-      total_surveys:         getSurveyResults().length,
       total_pw_changes:      changes.length,
       pw_changes_success:    changes.filter(c => c.success).length,
       pw_changes_failed:     changes.filter(c => !c.success).length,
