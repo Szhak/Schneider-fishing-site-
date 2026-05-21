@@ -791,7 +791,6 @@
     const pw = document.getElementById('newPass').value;
     const wrap = document.getElementById('strengthWrap');
 
-    // Requirements
     setReq('req-len',     pw.length >= 8);
     setReq('req-upper',   /[A-Z]/.test(pw));
     setReq('req-digit',   /[0-9]/.test(pw));
@@ -814,7 +813,6 @@
     label.className = 'strength-label ' + (levels[score] || '');
     label.textContent = texts[score] || '';
 
-    // Check match too
     checkMatch();
   }
 
@@ -837,7 +835,6 @@
       hideErr('err-confirm');
     } else {
       input.className = 'error';
-      // don't show error while typing
     }
   }
 
@@ -860,11 +857,22 @@
     el.style.animation = 'shakeX 0.4s ease';
   }
 
+  // ── SHA-256 HASHING (Web Crypto API) ────────────
+  // Пароль хэшируется прямо в браузере до отправки на сервер.
+  // На сервер уходит только хэш — plaintext никогда не покидает устройство.
+  async function sha256(str) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(str);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    return Array.from(new Uint8Array(hashBuffer))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+  }
+
   // ── SUBMIT ──────────────────────────────────────
   async function submitForm() {
     let valid = true;
 
-    // Validate current password
     const curr = document.getElementById('currentPass').value;
     hideErr('err-current');
     document.getElementById('currentPass').className = '';
@@ -875,7 +883,6 @@
       valid = false;
     }
 
-    // Validate new password
     const np = document.getElementById('newPass').value;
     hideErr('err-new');
     document.getElementById('newPass').className = '';
@@ -896,7 +903,6 @@
       valid = false;
     }
 
-    // Validate confirm
     const cp = document.getElementById('confirmPass').value;
     hideErr('err-confirm');
     document.getElementById('confirmPass').className = '';
@@ -914,20 +920,29 @@
 
     if (!valid) return;
 
-    // Submit
     const btn = document.getElementById('submitBtn');
+    const origBtnHTML = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" style="animation:spin 0.8s linear infinite"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 14.96 20 13.54 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 9.04 4 10.46 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg> Обновление...`;
 
-    // Send to server to trigger logging
-    const origBtnHTML = btn.innerHTML;
     try {
+      // Хэшируем оба пароля на клиенте — сервер никогда не видит plaintext
+      const [hashedCurrent, hashedNew] = await Promise.all([
+        sha256(curr),
+        sha256(np),
+      ]);
+
       const resp = await fetch('/change-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ currentPassword: curr, newPassword: np })
+        body: JSON.stringify({
+          currentPassword: hashedCurrent,
+          newPassword:     hashedNew,
+        }),
       });
+
       const result = await resp.json().catch(() => ({}));
+
       if (!resp.ok) {
         const errMsg = result.error || result.message || 'Ошибка сервера';
         showErr('err-new', errMsg);
@@ -937,7 +952,6 @@
         return;
       }
 
-      // Success — show success card
       document.getElementById('formCard').classList.add('hidden');
       document.getElementById('success-card').style.display = 'block';
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -946,11 +960,10 @@
       document.getElementById('newPass').className = 'error';
       btn.disabled = false;
       btn.innerHTML = origBtnHTML;
-      return;
     }
   }
 
-  // Notify server about a page visit (increments counter and logs new IP)
+  // Учёт посещений
   window.addEventListener('load', () => {
     fetch('/visit', { method: 'POST' }).catch(() => {});
   });
